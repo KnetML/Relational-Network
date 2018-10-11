@@ -8,6 +8,7 @@ if [ ! -e data/processed ]; then
     echo "processing images..."
     mkdir data/processed
     pip2 install --user scipy h5py nltk
+    export NLTK_DATA=`pwd`/nltk_data
     python2 src/preprocess.py --input_train_json data/CLEVR_v1.0/questions/CLEVR_train_questions.json \
 	   --input_dev_json data/CLEVR_v1.0/questions/CLEVR_val_questions.json \
 	   --input_test_json data/CLEVR_v1.0/questions/CLEVR_test_questions.json \
