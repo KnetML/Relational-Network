@@ -4,3 +4,4 @@
 deps/deps.jl
 slurm*
 *~
+nltk_data

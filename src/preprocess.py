@@ -11,6 +11,8 @@ import json
 import re
 import math
 import pdb
+import nltk
+nltk.download('punkt','nltk_data')
 
 def prepro_question(data, params):
     # preprocess all the question
