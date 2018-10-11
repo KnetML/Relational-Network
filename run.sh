@@ -21,6 +21,7 @@ BESTMODEL=${ROOTPATH}/saved_models/bestmodel_${EXPDATE}.jld2
 LOGFILE=${ROOTPATH}/saved_models/logfile_${EXPDATE}.out
 DATAPATH="data/processed"
 SCENEPATH="data/CLEVR_v1.0/scenes"
+mkdir -p ${ROOTPATH}/saved_models
 
 # To print the command
 echo ${ROOTPATH}/src/relnet.jl --logfile ${LOGFILE}\
