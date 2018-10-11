@@ -1,8 +1,9 @@
+using Pkg; for p in ("AutoGrad","Knet","ArgParse"); haskey(Pkg.installed(),p) || Pkg.add(p); end
+
 using AutoGrad
 using Knet
 using Logging
 using ArgParse
-using JLD2, FileIO
 using Printf
 
 include("data.jl")
@@ -43,9 +44,7 @@ function main()
     logger = SimpleLogger(output)
     LogLevel(-1000)
     global_logger(logger)
-    for (u,v) in opts
-        @info(u,"=>",v)
-    end
+    @info opts
     flush(output)
     qtrn,bstrn,ytrn,smtrn,iixtrn,infotrn = data(opts,"train")
     qdev,bsdev,ydev,smdev,iixdev,infodev  = data(opts,"val")
@@ -172,11 +171,11 @@ function loss(weights,rsettings,questions,bsizes,labels,world,pair_indices,onesa
     scores = weights[:softmax][1] * rout .+ weights[:softmax][2]
     total = logprob(labels,scores)
     if lss != nothing
-        lss[1] = lss[1] + AutoGrad.getval(-total)
-        lss[2] = lss[2] + AutoGrad.getval(length(labels))
+        lss[1] = lss[1] + value(-total)
+        lss[2] = lss[2] + value(length(labels))
     end
     if preds != nothing
-        push!(preds,AutoGrad.getval(scores))
+        push!(preds,value(scores))
     end
     return -total/length(labels)
 end

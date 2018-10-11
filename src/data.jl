@@ -1,3 +1,4 @@
+using Pkg; for p in ("JSON",); haskey(Pkg.installed(),p) || Pkg.add(p); end
 using JSON
 using Random
 function data(opts,splitname)
@@ -36,9 +37,7 @@ function data(opts,splitname)
         objlen = length(features)+3
         opts[:objlen] = objlen
         @info("objects are represented with vectors length of $objlen")
-        @info("features:")
-        display(features)
-        @info("----")
+        @info features
         # Order in objvector: material,shape,size,color,3dcoords
         scenematrix = zeros(Float32,maxobjnum*objlen,length(s))
         for (sindex,scene) in enumerate(s)
@@ -51,7 +50,7 @@ function data(opts,splitname)
                 scenematrix[(oindex-1)*objlen + objlen-2:(oindex-1)*objlen + objlen,sindex] = obj["3d_coords"]
             end
         end
-        @info("scene matrices has been created...")
+        @info("scene matrices have been created...")
         return scenematrix,features,id2ix
     end # end inner function
     scenematrix,features,id2ix = scenedata()
