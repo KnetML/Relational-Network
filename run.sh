@@ -17,10 +17,11 @@ OPTIM="Adam"
 PDROP="0.0 0.2 0.0"
 VALIDATEPER=20000
 EXPDATE=`date "+day_%m_%d_%y-time_%H_%M_%S"`
-BESTMODEL=${ROOTPATH}/saved_models/bestmodel_${EXPDATE}.jld
+BESTMODEL=${ROOTPATH}/saved_models/bestmodel_${EXPDATE}.jld2
 LOGFILE=${ROOTPATH}/saved_models/logfile_${EXPDATE}.out
 DATAPATH="data/processed"
 SCENEPATH="data/CLEVR_v1.0/scenes"
+mkdir -p ${ROOTPATH}/saved_models
 
 # To print the command
 echo ${ROOTPATH}/src/relnet.jl --logfile ${LOGFILE}\

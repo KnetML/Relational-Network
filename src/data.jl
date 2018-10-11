@@ -1,4 +1,6 @@
+using Pkg; for p in ("JSON",); haskey(Pkg.installed(),p) || Pkg.add(p); end
 using JSON
+using Random
 function data(opts,splitname)
     fname = string(opts[:datapath],"/",splitname,"_processed.json")
     #sname = string(opts[:datapath],"/CLEVR_",splitname,"_scenes.json")
@@ -34,10 +36,8 @@ function data(opts,splitname)
         end
         objlen = length(features)+3
         opts[:objlen] = objlen
-        info("objects are represented with vectors length of $objlen")
-        info("features:")
-        display(features)
-        info("----")
+        @info("objects are represented with vectors length of $objlen")
+        @info features
         # Order in objvector: material,shape,size,color,3dcoords
         scenematrix = zeros(Float32,maxobjnum*objlen,length(s))
         for (sindex,scene) in enumerate(s)
@@ -50,17 +50,17 @@ function data(opts,splitname)
                 scenematrix[(oindex-1)*objlen + objlen-2:(oindex-1)*objlen + objlen,sindex] = obj["3d_coords"]
             end
         end
-        info("scene matrices has been created...")
+        @info("scene matrices have been created...")
         return scenematrix,features,id2ix
     end # end inner function
     scenematrix,features,id2ix = scenedata()
     # process questions
     f=JSON.parsefile(fname)
     v = JSON.parsefile(vfile)["w2i"]
-    info("vocabulary size:",length(v))
+    @info("vocabulary size:",length(v))
     opts[:vs] = length(v)
     a2i = JSON.parsefile(afile)
-    info("read dataset & vocabulary")
+    @info("read dataset & vocabulary")
     new_f = Any[]
     for i in f
         newd = i
@@ -72,7 +72,7 @@ function data(opts,splitname)
         push!(newd["encoded_answer"],a2i[newd["answer"]])
         push!(new_f,newd)
     end
-    info("encode questions")
+    @info("encode questions")
     sorted_new_f = sort(new_f,lt=(x,y)->length(x["encoded_question"])<length(y["encoded_question"]),rev=true);
     result = Any[]
     imgix  = Any[]
@@ -117,14 +117,14 @@ function data(opts,splitname)
         push!(iix,map(x->x["image_index"],batch))
     end
     # shuffle buckets
-    info("shuffle data")
+    @info("shuffle data")
     indices = randperm(length(final_result))
     final_result = final_result[indices]
     final_batchsizes = final_batchsizes[indices]
     labels = labels[indices]
     imgix = imgix[indices]
     qix = qix[indices]
-    info("textual data is ready")
+    @info("textual data is ready")
     return final_result,final_batchsizes,labels,scenematrix,imgix,(features,id2ix,qix,iix)
 end
 

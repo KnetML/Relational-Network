@@ -1,17 +1,12 @@
+using Pkg; for p in ("AutoGrad","Knet","ArgParse"); haskey(Pkg.installed(),p) || Pkg.add(p); end
+
+using AutoGrad
 using Knet
 using Logging
 using ArgParse
-using JLD
-include("data.jl")
+using Printf
 
-import JLD: writeas, readas
-import Knet: RNN
-type RNNJLD; inputSize; hiddenSize; numLayers; dropout; inputMode; direction; mode; algo; dataType; end
-writeas(r::RNN) = RNNJLD(r.inputSize, r.hiddenSize, r.numLayers, r.dropout, r.inputMode, r.direction, r.mode, r.algo, r.dataType)
-readas(r::RNNJLD) = rnninit(r.inputSize, r.hiddenSize, numLayers=r.numLayers, dropout=r.dropout, skipInput=(r.inputMode==1), bidirectional=(r.direction==1), rnnType=(:relu,:tanh,:lstm,:gru)[1+r.mode], algo=r.algo, dataType=r.dataType)[1]
-type KnetJLD; a::Array; end
-writeas(c::KnetArray) = KnetJLD(Array(c))
-readas(d::KnetJLD) = (gpu() >= 0 ? KnetArray(d.a) : d.a)
+include("data.jl")
 
 function parseargs()
     s = ArgParseSettings()
@@ -42,76 +37,78 @@ end
 
 function main()
     opts = parseargs()
-    setseed(opts[:seed])
-    opts[:atype] = eval(parse(opts[:atype]))
+    Knet.seed!(opts[:seed])
+    opts[:atype] = eval(Meta.parse(opts[:atype]))
     opts[:model] = "relnet.jl"
-    Logging.configure(level=DEBUG)
-    Logging.configure(output=open(opts[:logfile], "a"))
-    for (u,v) in opts
-        info(u,"=>",v)
-    end
+    output = open(opts[:logfile], "a")
+    logger = SimpleLogger(output)
+    LogLevel(-1000)
+    global_logger(logger)
+    @info opts
+    flush(output)
     qtrn,bstrn,ytrn,smtrn,iixtrn,infotrn = data(opts,"train")
     qdev,bsdev,ydev,smdev,iixdev,infodev  = data(opts,"val")
     if isfile(opts[:bestmodel])
         # To continue training from the model given by opts[:bestmodel]
-        info(" loading model and continue training...")
-        mfile = JLD.load(opts[:bestmodel])
+        @info(" loading model and continue training...")
+        mfile = Knet.load(opts[:bestmodel])
         weights = mfile["weights"]
         rsettings = mfile["rsettings"]
         opts[:lr] = mfile["lr"]
-        params = mfile["params"]
+        params1 = mfile["params"]
         besties = zeros(2)
         besties[1] = mfile["bestacc"]
         besties[2] = 80.00
-        optimtype = eval(parse(opts[:optim]))
-        info("starting lr:",opts[:lr]," best devacc:",besties[1])
+        optimtype = eval(Meta.parse(opts[:optim]))
+        @info("starting lr:",opts[:lr]," best devacc:",besties[1])
 
     else
-        info("training from scratch...")
+        @info("training from scratch...")
         rsettings,weights = initweights(opts)
-        optimtype = eval(parse(opts[:optim]))
-        params = oparams(weights,optimtype;lr=opts[:lr],gclip=opts[:gclip])
+        optimtype = eval(Meta.parse(opts[:optim]))
+        params1 = oparams(weights,optimtype;lr=opts[:lr],gclip=opts[:gclip])
     end
     # global variables
     trn_max_objnum = div(size(smtrn,1),opts[:objlen])
-    t1 = hcat(vec(transpose(repmat(1:trn_max_objnum,1,trn_max_objnum))),repmat(1:trn_max_objnum,trn_max_objnum,1))
+    t1 = hcat(vec(transpose(repeat(1:trn_max_objnum,1,trn_max_objnum))),repeat(1:trn_max_objnum,trn_max_objnum,1))
     inds =  vec(transpose(t1))
     trn_pair_indices = vcat([ map(x->(i-1)*trn_max_objnum+x,inds) for i=1:opts[:batchsize]]...)
     trn_onesarr = opts[:atype](ones(Float32,1,trn_max_objnum * trn_max_objnum))
 
     dev_max_objnum = div(size(smdev,1),opts[:objlen])
-    t1 = hcat(vec(transpose(repmat(1:dev_max_objnum,1,dev_max_objnum))),repmat(1:dev_max_objnum,dev_max_objnum,1))
+    t1 = hcat(vec(transpose(repeat(1:dev_max_objnum,1,dev_max_objnum))),repeat(1:dev_max_objnum,dev_max_objnum,1))
     inds =  vec(transpose(t1))
     dev_pair_indices = vcat([ map(x->(i-1)*dev_max_objnum+x,inds) for i=1:opts[:batchsize]]...)
     dev_onesarr = opts[:atype](ones(Float32,1,dev_max_objnum * dev_max_objnum))
 
+    flush(output)
     besties  = zeros(2)
     patiance = zeros(1)
     patiance[1] = opts[:patiance]
     for i=1:opts[:epoch]
-        lss = train(weights,rsettings,params,trn_onesarr,trn_pair_indices,qtrn,bstrn,ytrn,smtrn,iixtrn,opts,besties,patiance)
-        info(@sprintf "epoch:%d trnlss:%.4f:" i lss[1]/lss[2])
+        lss = train(weights,rsettings,params1,trn_onesarr,trn_pair_indices,qtrn,bstrn,ytrn,smtrn,iixtrn,opts,besties,patiance)
+        @info(@sprintf "epoch:%d trnlss:%.4f:" i lss[1]/lss[2])
         devlss,devacc = accuracy(weights,rsettings,dev_onesarr,dev_pair_indices,qdev,bsdev,ydev,smdev,iixdev,opts)
-        info(@sprintf "[dev-%d] lss:%.4f acc:%.4f" i devlss[1]/devlss[2] devacc)
+        @info(@sprintf "[dev-%d] lss:%.4f acc:%.4f" i devlss[1]/devlss[2] devacc)
         if devacc > besties[1]
             besties[1] = devacc
-            info("best dev accuracy: ",besties[1])
-            JLD.save(opts[:bestmodel],"weights",weights,"rsettings",
-                     rsettings,"params",params,"bestacc",besties[1],
-                     "startfrom",i,"lr",opts[:lr])
+            @info("best dev accuracy: ",besties[1])
+            Knet.save(opts[:bestmodel], Dict("weights" => weights, "rsettings" => rsettings,
+                    "params" => params1, "bestacc" => besties[1], "startfrom" => i, "lr" => opts[:lr]))
             patiance[1] = opts[:patiance]
         else
             patiance[1] =  patiance[1] - 1
             if patiance[1] < 0
-                info(@sprintf "Patiance goes below zero, training finalized, best dev acc:%.3f" besties[1])
+                @info(@sprintf "Patiance goes below zero, training finalized, best dev acc:%.3f" besties[1])
                 break
             end
             if patiance[1] == div(opts[:patiance],2)
                 opts[:lr] = opts[:lr]*opts[:decayrate]
-                params = oparams(weights,optimtype;lr=opts[:lr],gclip=opts[:gclip])
-                info(@sprintf "learning rate has been set to: %.4f" opts[:lr])
+                params1 = oparams(weights,optimtype;lr=opts[:lr],gclip=opts[:gclip])
+                @info(@sprintf "learning rate has been set to: %.4f" opts[:lr])
             end
         end
+        flush(output)
     end
 end
 
@@ -141,7 +138,7 @@ function relnet(weights,q_embedding,world,pair_indices,onesarr,pdrop)
     outg4   = dropout(outg4,pdrop[1])
     # sum object pairs
     spairs1 = reshape(outg4,size(outg4,1),size(onesarr,2),bs)
-    spairs2 = reshape(sum(spairs1,2),size(spairs1,1),size(spairs1,3))
+    spairs2 = reshape(sum(spairs1,dims=2),size(spairs1,1),size(spairs1,3))
     # F network
     outf1   = linear(weights[:F1],spairs2)
     outf1   = relu.(outf1)
@@ -158,7 +155,7 @@ end
 function logprob(output,ypred)
     nrows,ncols = size(ypred)
     index = output + nrows*(0:(length(output)-1))
-    o1 = logp(ypred,1)
+    o1 = logp(ypred,dims=1)
     o2 = o1[index]
     o3 = sum(o2)
     return o3
@@ -174,18 +171,18 @@ function loss(weights,rsettings,questions,bsizes,labels,world,pair_indices,onesa
     scores = weights[:softmax][1] * rout .+ weights[:softmax][2]
     total = logprob(labels,scores)
     if lss != nothing
-        lss[1] = lss[1] + AutoGrad.getval(-total)
-        lss[2] = lss[2] + AutoGrad.getval(length(labels))
+        lss[1] = lss[1] + value(-total)
+        lss[2] = lss[2] + value(length(labels))
     end
     if preds != nothing
-        push!(preds,AutoGrad.getval(scores))
+        push!(preds,value(scores))
     end
     return -total/length(labels)
 end
 
 lossgradient = grad(loss)
 
-function train(weights,rsettings,params,onesarr,pair_indices,questions,batchsizes,labels,smatrix,imgix,opts,besties,patiance)
+function train(weights,rsettings,params1,onesarr,pair_indices,questions,batchsizes,labels,smatrix,imgix,opts,besties,patiance)
     lss = zeros(2)
     maxobjnum = div(size(smatrix,1),opts[:objlen])
     for i = 1:length(questions)
@@ -193,7 +190,7 @@ function train(weights,rsettings,params,onesarr,pair_indices,questions,batchsize
         world    = reshape(world,opts[:objlen],maxobjnum*opts[:batchsize])
         grads = lossgradient(weights,rsettings,questions[i],batchsizes[i],labels[i],world,pair_indices,onesarr;
                              lss=lss,pdrop=opts[:pdrop])
-        update!(weights,grads,params)
+        update!(weights,grads,params1)
     end
     return lss
 end
@@ -207,7 +204,7 @@ function accuracy(weights,rsettings,onesarr,pair_indices,questions,batchsizes,la
         world = opts[:atype](smatrix[:,imgix[i]])
         world = reshape(world,opts[:objlen],maxobjnum*opts[:batchsize])
         loss(weights,rsettings,questions[i],batchsizes[i],labels[i],world,pair_indices,onesarr;lss=lss,preds=preds)
-        acc = (mapslices(indmax,Array(preds[1]),1) .== reshape(labels[i],1,opts[:batchsize]))
+        acc = (mapslices(argmax,Array(preds[1]),dims=1) .== reshape(labels[i],1,opts[:batchsize]))
         push!(cumsacc,acc...)
     end
     return lss,sum(cumsacc)/length(cumsacc)
@@ -242,9 +239,9 @@ function initweights(opts)
     return rsettings,weights
 end
 
-oparams{T<:Number}(::KnetArray{T},otype; o...)=otype(;o...)
-oparams{T<:Number}(::Array{T},otype; o...)=otype(;o...)
-oparams(a::Associative,otype; o...)=Dict(k=>oparams(v,otype;o...) for (k,v) in a)
+oparams(::KnetArray{<:Number},otype; o...)=otype(;o...)
+oparams(::Array{<:Number},otype; o...)=otype(;o...)
+oparams(a::AbstractDict,otype; o...)=Dict(k=>oparams(v,otype;o...) for (k,v) in a)
 oparams(a,otype; o...)=map(x->oparams(x,otype;o...), a)
 
 !isinteractive() && main()
